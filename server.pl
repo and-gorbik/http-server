@@ -31,22 +31,32 @@ sub get {
 	return err "404 Not found", "No such file or directory: $path";
 }
 
-#TODO: fix this subroutine
-# sub put {
-# 	my $path = shift;
-# 	my $socket = shift;
-# 	return err "415 Not allowed", "This file is already exist" if -x $path;
-# 	open my $fh, '>:raw', $path or return err "415 Not allowed", "Can't open a file $path";
-# 	my $size = 0;
-# 	while (<$socket>) {
-# 		next unless $size = m/Content-Length:\s+([\d+])/;
-# 		last if m/^\n$/;
-# 	}
-# 	say $size;
-# 	# print $fh, $request or return err "415 Not allowed", "Can't write a file $path";
-# 	close $fh or return err "415 Not allowed", "Can't close a file $path";
-# 	return "HTTP/1.1 200 OK\nContent-Length: 0\n\n";
-# }
+sub put {
+	my $path = shift;
+	my $socket = shift;
+	return err "415 Not allowed", "This file is already exist" if -e $path;
+	open my $file, '>:raw', $path or return err "415 Not allowed", "Can't open a file $path";
+	my $size = 0;
+	while (<$socket>) {
+		chomp;
+		# if (m/Expect:\s+100\-continue/) {
+		# 	print $client "HTTP/1.1 100 Continue\nContent-Length: 0\n\n\n";
+		# }
+		if (m/Content-Length:\s+(\d+)/) {
+			$size = $1;
+		}
+		last if length $_ == 1;
+	}
+	while ($size > 0) {
+		return err "500 Internal Server Error", "Recv failed: $!"
+			unless defined recv $socket, my $buf, 1024, 0;
+		print $file $buf or
+			return err "500 Internal Server Error", "Can't print data $!\n";
+		$size -= length $buf;
+	}
+	close $file or return err "415 Not allowed", "Can't close a file $path";
+	return "HTTP/1.1 201 Created\nContent-Length: 0\n\n";
+}
 
 sub del {
 	my $path = shift;
@@ -70,25 +80,25 @@ my $ip = "127.0.0.1";
 my $port = "11111";
 
 # TCP layer
-socket my $lsocket, AF_INET, SOCK_STREAM, IPPROTO_TCP or die $!;
-setsockopt $lsocket, SOL_SOCKET, SO_REUSEADDR, 1 or die $!;
-bind $lsocket, sockaddr_in($port, inet_aton($ip)) or die $!;
-listen $lsocket, SOMAXCONN or die $!;
-while (accept my $csocket, $lsocket) {
-	my $request = <$csocket>;
+socket my $server, AF_INET, SOCK_STREAM, IPPROTO_TCP or die $!;
+setsockopt $server, SOL_SOCKET, SO_REUSEADDR, 1 or die $!;
+bind $server, sockaddr_in($port, inet_aton($ip)) or die $!;
+listen $server, SOMAXCONN or die $!;
+while (accept my $client, $server) {
+	my $request = <$client>;
 	# HTTP layer
 	my ($method, $path) = $request =~ /^([A-Z]+)\s+\/([^\s]+)?\s+HTTP/;
 	$method //= "";
 	$path //= "";
 	$method = lc $method;
 	if ($method eq "get") {
-		syswrite $csocket, get "$root/$path";
+		syswrite $client, get "$root/$path";
 	} elsif ($method eq "put") {
-		syswrite $csocket, put "$root/$path", $csocket;
+		syswrite $client, put "$root/$path", $client;
 	} elsif ($method eq "delete") {
-		syswrite $csocket, del "$root/$path";
+		syswrite $client, del "$root/$path";
 	} else {
-		syswrite $csocket, err "501 Not implemented", "No such method: $method";
+		syswrite $client, err "501 Not implemented", "No such method: $method";
 	}
-	close $csocket;
+	close $client;
 }
