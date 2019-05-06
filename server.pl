@@ -1,5 +1,7 @@
 use 5.016;
 use Socket ':all';
+use Getopt::Long qw(GetOptions);
+Getopt::Long::Configure qw(gnu_getopt);
 
 sub err {
 	my $code = shift;
@@ -73,11 +75,15 @@ sub del {
 	return err "404 Not found", "$path is not found";
 }
 
-# Usage: $0 -h <ip> -p <port> -d <root directory>
-# обработка аргументов командной строки
-my $root = "/home/andrey/server-data";
-my $ip = "127.0.0.1";
-my $port = "11111";
+my ($root, $ip, $port);
+GetOptions(
+	'host|h=s' => \$ip,
+	'port|p=s' => \$port,
+	'dir|d=s' => \$root,
+);
+die "Usage: $0 -h <ip> -p <port> -d <root directory>\n"
+	unless defined $root and defined $ip and defined $port;
+
 
 # TCP layer
 socket my $server, AF_INET, SOCK_STREAM, IPPROTO_TCP or die $!;
