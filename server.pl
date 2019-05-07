@@ -91,20 +91,28 @@ setsockopt $server, SOL_SOCKET, SO_REUSEADDR, 1 or die $!;
 bind $server, sockaddr_in($port, inet_aton($ip)) or die $!;
 listen $server, SOMAXCONN or die $!;
 while (accept my $client, $server) {
-	my $request = <$client>;
-	# HTTP layer
-	my ($method, $path) = $request =~ /^([A-Z]+)\s+\/([^\s]+)?\s+HTTP/;
-	$method //= "";
-	$path //= "";
-	$method = lc $method;
-	if ($method eq "get") {
-		syswrite $client, get "$root/$path";
-	} elsif ($method eq "put") {
-		syswrite $client, put "$root/$path", $client;
-	} elsif ($method eq "delete") {
-		syswrite $client, del "$root/$path";
+	my $pid = fork();
+	die "Can't fork $!\n" unless defined $pid;
+	if ($pid) {
+		close $client;
 	} else {
-		syswrite $client, err "501 Not implemented", "No such method: $method";
+		close $server;
+		my $request = <$client>;
+		# HTTP layer
+		my ($method, $path) = $request =~ /^([A-Z]+)\s+\/([^\s]+)?\s+HTTP/;
+		$method //= "";
+		$path //= "";
+		$method = lc $method;
+		if ($method eq "get") {
+			syswrite $client, get "$root/$path";
+		} elsif ($method eq "put") {
+			syswrite $client, put "$root/$path", $client;
+		} elsif ($method eq "delete") {
+			syswrite $client, del "$root/$path";
+		} else {
+			syswrite $client, err "501 Not implemented", "No such method: $method";
+		}
+		close $client;
+		exit;
 	}
-	close $client;
 }
