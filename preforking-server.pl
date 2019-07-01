@@ -1,7 +1,15 @@
 use 5.016;
+use warnings;
 use Socket ':all';
 use Getopt::Long qw(GetOptions);
 Getopt::Long::Configure qw(gnu_getopt);
+
+sub get_num_processors {
+	open my($f), '<', '/proc/cpuinfo' or return undef;
+	my $num = grep {/^processor/} <$f>;
+	close $f or warn "/proc/cpuinfo can't be closed: $!\n";
+	return $num;
+}
 
 sub err {
 	my $code = shift;
@@ -94,7 +102,12 @@ sub handle {
 	}
 }
 
+sub daemonize {
+
+}
+
 # main flow
+
 
 my ($root, $ip, $port);
 GetOptions(
@@ -105,6 +118,8 @@ GetOptions(
 die "Usage: $0 -h <ip> -p <port> -d <root directory>\n"
 	unless defined $root and defined $ip and defined $port;
 
+# daemonizing
+daemonize();
 
 # TCP layer
 socket my $server, AF_INET, SOCK_STREAM, IPPROTO_TCP or die $!;
@@ -113,8 +128,9 @@ bind $server, sockaddr_in($port, inet_aton($ip)) or die $!;
 listen $server, SOMAXCONN or die $!;
 
 # forking a four workers
+my $NUM_WORKERS = get_num_processors() // 2;
 my @workers;
-for (1..4) {
+for (1..$NUM_WORKERS) {
 	my $pid = fork();
 	die "Can't fork $!\n" unless defined $pid;
 	
